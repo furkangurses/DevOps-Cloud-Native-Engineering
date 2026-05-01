@@ -7,8 +7,6 @@ This repository contains the projects, laboratory exercises, and strategic imple
 ## 🎯 Course Overview
 In modern DevOps practices, testing is not a phase that happens after development—it is the engine that drives it. This course focuses on shifting quality to the left by utilizing **Test-Driven Development (TDD)** to ensure code correctness and **Behavior-Driven Development (BDD)** to align technical implementation with business requirements.
 
-http://googleusercontent.com/image_content/156
-
 
 
 ## 🛠 Engineering Core Competencies
