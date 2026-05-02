@@ -1342,3 +1342,567 @@ While the "Happy Path" is fully tested, robust microservices require handling **
 
 > **Engineering Note:** "The test case defines the behavior of the code. Code is merely the implementation detail of the test's intent."
 
+
+---
+
+
+# Behave BDD: Test Environment Lifecycle & Fixture Management
+
+[![Testing Framework](https://img.shields.io/badge/Framework-Behave-blue.svg)](https://behave.readthedocs.io/)
+[![Automation](https://img.shields.io/badge/Tool-Selenium-green.svg)](https://www.selenium.dev/)
+[![DevOps](https://img.shields.io/badge/Environment-CI%2FCD%20Ready-orange.svg)]()
+
+This repository implements a professional-grade Behavior Driven Development (BDD) environment setup using Python's **Behave** framework. It focuses on lifecycle management via `environment.py`, ensuring a clean, scalable, and configurable infrastructure for automated UI testing.
+
+---
+
+## 🏗️ Architecture Overview
+
+In a production-level BDD suite, managing the state of the system under test (SUT) is critical. This project utilizes **Environment Hooks (Fixtures)** to automate setup and teardown processes at various levels of granularity.
+
+### The Behave Hook Hierarchy
+
+| Hook Level | Function | Production Use Case |
+| :--- | :--- | :--- |
+| **All** | `before_all` / `after_all` | Initializing WebDriver, DB Connections, Global Configs. |
+| **Feature** | `before_feature` / `after_feature` | Preparing feature-specific data or state. |
+| **Scenario** | `before_scenario` / `after_scenario` | Resetting application state to ensure test isolation. |
+| **Step** | `before_step` / `after_step` | Debugging or real-time logging (rarely used). |
+| **Tag** | `before_tag` / `after_tag` | Targeted setup for @slow, @wip, or @smoke tests. |
+
+---
+
+## ⚙️ Configuration & Environment Variables
+
+Following **12-Factor App** principles, our testing environment is driven by environment variables. This allows the same suite to run against `localhost`, `staging`, or `production` without code changes.
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `BASE_URL` | `http://localhost:8080` | The target URL for the System Under Test (SUT). |
+| `WAIT_SECONDS` | `60` | Implicit wait time for Selenium WebDriver. |
+
+---
+
+## 🚀 Implementation: `environment.py`
+
+The `environment.py` file acts as the controller for the testing lifecycle. Below is the production-ready implementation utilizing **Headless Chrome** for CI/CD compatibility.
+
+```python
+import os
+from selenium import webdriver
+
+def before_all(context):
+    """
+    Global setup executed once before any features are run.
+    Sets up the WebDriver and global context variables.
+    """
+    # 1. Load Configuration from Environment
+    context.base_url = os.getenv('BASE_URL', 'http://localhost:8080')
+    context.wait_seconds = int(os.getenv('WAIT_SECONDS', '60'))
+
+    # 2. WebDriver Orchestration (Headless Chrome for CI/CD)
+    options = webdriver.ChromeOptions()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    
+    context.driver = webdriver.Chrome(options=options)
+    
+    # 3. Configure Driver Performance
+    context.driver.implicitly_wait(context.wait_seconds)
+    context.driver.maximize_window()
+
+    print(f"[INFO] Environment Initialized. Testing against: {context.base_url}")
+
+def after_all(context):
+    """
+    Global teardown executed once after all features are processed.
+    Ensures no orphaned processes remain in memory.
+    """
+    if hasattr(context, 'driver'):
+        context.driver.quit()
+        print("[INFO] WebDriver session closed successfully.")
+
+def before_feature(context, feature):
+    """Execution logic before each feature file."""
+    pass
+
+def before_scenario(context, scenario):
+    """Execution logic before each individual scenario."""
+    pass
+
+```
+
+----------
+
+## 🛠️ Usage Instructions
+
+### 1. Environment Setup
+
+Ensure your local environment has the necessary drivers installed (e.g., ChromeDriver).
+
+### 2. Running Tests
+
+You can trigger the tests using the standard Behave CLI. To override default configurations, pass environment variables inline:
+
+Bash
+
+```
+# Default execution
+behave
+
+# Targeting a specific environment with custom timeout
+BASE_URL=[https://staging.myapp.com](https://staging.myapp.com) WAIT_SECONDS=30 behave
+
+```
+
+----------
+
+## 💎 Key Engineering Principles Applied
+
+-   **Isolation:** Each test scenario can have its own environment lifecycle to prevent state leakage.
+    
+-   **Portability:** Use of `os.getenv` ensures the suite is platform-agnostic and CI/CD ready.
+    
+-   **Resource Management:** The `after_all` hook guarantees that WebDriver instances are properly disposed of, preventing memory leaks in automated runners (Jenkins/GitHub Actions).
+    
+-   **Context Sharing:** The `context` object is leveraged as a thread-safe container to share the `driver` and `config` across all step definitions.
+    
+
+> **Note:** The `context` object is the backbone of Behave. Any attribute attached to it (e.g., `context.driver`) becomes globally accessible to your step implementation files.
+
+
+---
+
+
+
+# 🚀 BDD Test Data Provisioning with Behave
+
+> **Overview:** This repository contains the reference implementation for seeding test data within our Behavior-Driven Development (BDD) pipelines. We utilize Python's `behave` framework combined with REST API interactions to ensure a clean, deterministic state before running end-to-end integration tests.
+
+
+---
+
+## 🏗 Architecture & Approach
+
+In automated testing for cloud and microservices architectures, tests often require a strict initial dataset. Instead of hardcoding this in scripts, we declare the desired state dynamically inside the `.feature` file. 
+
+> *"By defining infrastructure and service states in the `Background` section, we make our test requirements readable for both business stakeholders and platform engineers."*
+
+When Behave reads the Gherkin tables, it automatically injects them into the `context.table` object as a list of dictionaries. We then use the `requests` library to interface with our Mock API to purge old configurations and inject the defined state.
+
+---
+
+## 📝 Feature File Specifications
+
+In your `features/cloud_provisioning.feature` file, define the initial state of your cloud instances. Notice how we use a data table directly under the `Background` keyword.
+
+```gherkin
+Feature: Cloud Instance Management API
+  As a DevOps engineer
+  I want to interact with the Cloud Provisioning API
+  So that I can automate infrastructure scaling
+
+  Background:
+    Given the following cloud instances
+      | hostname  | environment | active | instance_type | region    |
+      | web-01    | production  | True   | t3.medium     | us-east-1 |
+      | db-master | staging     | False  | r5.large      | eu-west-1 |
+      | cache-01  | development | True   | t3.micro      | us-east-1 |
+
+  Scenario: Verify active production nodes
+    # ... your test steps here ...
+
+```
+
+----------
+
+## ⚙️ Implementation Guide
+
+All step definitions should reside in the `features/steps/` directory. For this workflow, we will create `infrastructure_steps.py`.
+
+### 1. Step Definition Setup
+
+Map the step string explicitly to match the Gherkin statement using the `@given` decorator.
+
+Python
+
+```
+from behave import given
+
+@given('the following cloud instances')
+def step_impl(context):
+    """Refreshes the mock cloud database with declared instances."""
+    pass
+
+```
+
+### 2. State Teardown (Cleanup)
+
+Before injecting new records, we must guarantee a clean state. We issue a `GET` request to fetch active instances, loop through them, and send a `DELETE` request for each.
+
+Python
+
+```
+    # List active instances and terminate them
+    response = requests.get(f"{context.base_url}/instances")
+    assert response.status_code == 200, "Failed to retrieve initial instances"
+    
+    for instance in response.json():
+        del_response = requests.delete(f"{context.base_url}/instances/{instance['id']}")
+        assert del_response.status_code == 204, f"Failed to delete {instance['id']}"
+
+```
+
+### 3. State Provisioning (Loading)
+
+Iterate over `context.table`, map the strings to native Python types (especially booleans), and push the payload via a `POST` request.
+
+Python
+
+```
+    # Provision new nodes from the Gherkin table
+    for row in context.table:
+        payload = {
+            "hostname": row['hostname'],
+            "environment": row['environment'],
+            "active": row['active'] in ['True', 'true', '1'], # Typecast to Boolean
+            "instance_type": row['instance_type'],
+            "region": row['region']
+        }
+        post_response = requests.post(f"{context.base_url}/instances", json=payload)
+        assert post_response.status_code == 201, "Failed to provision instance"
+
+```
+
+----------
+
+## 💻 Complete Implementation
+
+Here is the final, production-ready code for `features/steps/infrastructure_steps.py`:
+
+Python
+
+```
+# pylint: disable=function-redefined, missing-function-docstring
+# flake8: noqa
+"""
+Infrastructure Steps
+Handles state initialization for Cloud Provisioning tests.
+"""
+import requests
+from behave import given
+
+@given('the following cloud instances')
+def step_impl(context):
+    """
+    Purge existing instances and provision new ones based on the feature table.
+    """
+    
+    # --- PHASE 1: TEARDOWN ---
+    get_response = requests.get(f"{context.base_url}/instances")
+    assert get_response.status_code == 200, "API Unreachable"
+    
+    for instance in get_response.json():
+        del_response = requests.delete(f"{context.base_url}/instances/{instance['id']}")
+        assert del_response.status_code == 204, f"Delete failed for {instance['id']}"
+
+    # --- PHASE 2: PROVISIONING ---
+    for row in context.table:
+        payload = {
+            "hostname": row['hostname'],
+            "environment": row['environment'],
+            "active": row['active'] in ['True', 'true', '1'],
+            "instance_type": row['instance_type'],
+            "region": row['region']
+        }
+        
+        post_response = requests.post(f"{context.base_url}/instances", json=payload)
+        assert post_response.status_code == 201, f"Failed to create {row['hostname']}"
+
+```
+
+----------
+
+## 🚀 Execution
+
+To execute the test suite and trigger the data loading process, simply run the following command in your terminal from the root of the project repository:
+
+Bash
+
+```
+behave
+
+```
+
+_If configured correctly, you should see Behave parsing the `Background` step, hitting the API, and turning the terminal output green._
+
+----------
+
+## ☑️ Pre-flight Checklist
+
+Ensure the following items are verified before merging your testing logic to the main branch:
+
+-   [x] Defined `BASE_URL` in `environment.py` (`context.base_url`).
+    
+-   [ ] Created `cloud_provisioning.feature` with valid Gherkin syntax.
+    
+-   [ ] Added `infrastructure_steps.py` to the `features/steps/` directory.
+    
+-   [ ] Handled boolean logic correctly for the `active` attribute.
+    
+-   [ ] Tested endpoint reachability locally before executing `behave`.
+
+---
+
+
+
+# 🚀 BDD Automation: Generating Step Definitions with Behave
+
+![Python Version](https://img.shields.io/badge/python-3.9+-blue.svg)
+![Framework](https://img.shields.io/badge/framework-Behave-green.svg)
+![DevOps](https://img.shields.io/badge/pipeline-CI%2FCD%20Ready-orange.svg)
+
+## 📋 Overview
+In a professional **DevOps and QA Automation** ecosystem, speed and consistency are key. This project demonstrates how to leverage **Behave** (Python's Cucumber-based BDD framework) to automatically generate boilerplate step definitions. This "contract-first" approach ensures that our test suites perfectly align with our infrastructure requirements and business logic.
+
+> **Engineer's Note:** Instead of manually writing boilerplate, we use the `behave` CLI to detect undefined steps and scaffold our Python implementation files.
+
+---
+
+## 🛠 Workflow Architecture
+
+The BDD lifecycle follows a pattern similar to TDD (Test-Driven Development), specifically the **Red/Yellow/Green** cycle:
+
+| Color | Status | Meaning |
+| :--- | :--- | :--- |
+| 🟨 **Yellow** | **Undefined** | The Gherkin step exists, but no Python function matches it. |
+| 🟦 **Blue** | **Skipped** | Steps following a failed or undefined step are bypassed to save resources. |
+| 🟥 **Red** | **Failed** | The step is implemented but the logic or assertion failed. |
+| 🟩 **Green** | **Passed** | The step is implemented and the requirements are met. |
+
+---
+
+## 🚀 Lab Exercise: Cloud Resource Management
+In this professional context, we are testing a **Cloud Inventory Service** rather than a generic search.
+
+### 1. The Feature Specification
+`features/cloud_inventory.feature`
+```gherkin
+Feature: Cloud Resource Inventory Management
+    As a Cloud Engineer
+    I want to query my infrastructure resources
+    So that I can verify the state of my environment
+
+    Scenario: Retrieve Active Instance Details
+        Given I am authenticated to the "Cloud Management Console"
+        When I filter resources by category "compute"
+        And I click the "Sync Inventory" button
+        Then I should see the message "Sync Successful"
+        And I should see "web-server-01" in the active list
+        But I should not see "legacy-db-backup" in the results
+
+```
+
+### 2. Generating Step Stubs
+
+To identify what needs to be coded, run the following command in your terminal:
+
+Bash
+
+```
+behave
+
+```
+
+**Standard Output Analysis:** Behave will scan the `./features` directory. Finding no matches in `./features/steps`, it will output **Yellow** text for the undefined steps and provide **Code Snippets** at the bottom.
+
+----------
+
+### 3. Implementation (The "Engineer" Approach)
+
+Paste the generated snippets into your `web_steps.py` file. We wrap these in a professional structure using `NotImplementedError` to ensure no "silent passes" occur during development.
+
+`features/steps/web_steps.py`
+
+Python
+
+```
+from behave import given, when, then
+from selenium.webdriver.common.by import By
+
+# --- Infrastructure Setup Steps ---
+
+@given(u'I am authenticated to the "{page_name}"')
+def step_impl(context, page_name):
+    """ Authenticates the session against the target environment """
+    raise NotImplementedError(u'STEP: Given I am authenticated to the Cloud Portal')
+
+# --- Action/Event Steps ---
+
+@when(u'I filter resources by category "{category}"')
+def step_impl(context, category):
+    """ Applies API or UI filters based on resource tags """
+    raise NotImplementedError(u'STEP: When I set the Category to {}'.format(category))
+
+@when(u'I click the "{button_name}" button')
+def step_impl(context, button_name):
+    """ Triggers a DOM event or API post request """
+    raise NotImplementedError(u'STEP: When I click the {} button'.format(button_name))
+
+# --- Assertion/Validation Steps ---
+
+@then(u'I should see the message "{message}"')
+def step_impl(context, message):
+    """ Validates flash messages or toast notifications """
+    raise NotImplementedError(u'STEP: Then I should see status: {}'.format(message))
+
+@then(u'I should see "{resource_id}" in the active list')
+def step_impl(context, resource_id):
+    """ Verifies presence of specific resource in the resulting dataset """
+    raise NotImplementedError(u'STEP: Then I should see {} in results'.format(resource_id))
+
+@then(u'I should not see "{resource_id}" in the results')
+def step_impl(context, resource_id):
+    """ Ensures decommissioned or filtered resources are hidden """
+    raise NotImplementedError(u'STEP: Then I should not see {}'.format(resource_id))
+
+```
+
+---
+
+
+# ☁️ BDD Automation: Implementing Step Definitions for Cloud Infrastructure
+
+![Python Version](https://img.shields.io/badge/python-3.9+-blue.svg)
+![Framework](https://img.shields.io/badge/framework-Behave-green.svg)
+![Selenium](https://img.shields.io/badge/Selenium-4.19+-orange.svg)
+![CI/CD](https://img.shields.io/badge/build-passing-brightgreen.svg)
+
+## 📋 Overview
+In this module, we transition from generated **Behavior-Driven Development (BDD)** stubs to actual functional test code. We will implement the Python steps required to validate our Cloud Infrastructure Management Console using **Behave** and **Selenium WebDriver**.
+
+This guide covers the core **Red/Green/Refactor** workflow, mapping Gherkin feature steps to executable Python actions such as DOM interaction, event triggering, and state validation.
+
+> **⚠️ CRITICAL ENGINEERING UPDATE: Selenium 4.x Syntax**
+> We have upgraded our pipeline to Selenium 4.19.0. The legacy locator method `find_element_by_id(element_id)` is **deprecated and removed**. 
+> All DOM queries must now strictly use the `By` class: `context.driver.find_element(By.ID, element_id)`.
+
+---
+
+## 🔄 The BDD Implementation Lifecycle
+
+Before diving into the code, understand the terminal outputs when running `behave`:
+
+| State | Console Color | Meaning in CI/CD Pipeline | Next Action |
+| :--- | :---: | :--- | :--- |
+| **Missing** | 🟨 Yellow | Step definition does not exist. | Generate stubs and add to `steps.py`. |
+| **Skipped** | 🟦 Blue | Skipped due to a prior failure in the scenario. | Fix the preceding broken step. |
+| **Failing** | 🟥 Red | Step exists but raised an exception (e.g., `NotImplementedError`). | **Implement the step logic.** |
+| **Passing** | 🟩 Green | Step successfully executed. | Move to the next red step. |
+
+---
+
+## 🛠️ Step-by-Step Implementation Guide
+
+Our feature scenario validates that an engineer can successfully filter active compute instances while ensuring decommissioned nodes are hidden. 
+
+### Prerequisites Setup
+Ensure your `features/steps/web_steps.py` file includes the necessary imports:
+```python
+from behave import given, when, then
+from selenium.webdriver.common.by import By
+
+```
+
+### Step 1: Navigating to the Target Environment
+
+**Gherkin:** `Given I am on the "Cloud Console Dashboard"`
+
+We need to resolve the base URL from our environment context and command the WebDriver to issue an HTTP GET request.
+
+Python
+
+```
+@given('I am on the "Cloud Console Dashboard"')
+def step_impl(context):
+    """ Instructs the web driver to load the root URL of the service """
+    context.response = context.driver.get(context.base_url)
+
+```
+
+### Step 2: Inputting Query Data
+
+**Gherkin:** `When I set the "Resource Type" to "ec2-instance"`
+
+To interact with input fields, we locate the element, clear any existing cache/data, and inject our string. _(Assuming the DOM element ID is `resource_type`)_.
+
+Python
+
+```
+@when('I set the "Resource Type" to "{resource}"')
+def step_impl(context, resource):
+    """ Locates the filter input, clears it, and inputs the target resource type """
+    element = context.driver.find_element(By.ID, 'resource_type')
+    element.clear()
+    element.send_keys(resource)
+
+```
+
+### Step 3: Triggering Pipeline Actions
+
+**Gherkin:** `And I click the "Filter" button`
+
+Buttons and links require the `.click()` method to simulate user interaction. _(Assuming standard UI ID convention: `lowercase_name-btn`)_.
+
+Python
+
+```
+@when('I click the "Filter" button')
+def step_impl(context):
+    """ Simulates an event click on the filter execution button """
+    element = context.driver.find_element(By.ID, 'filter-btn')
+    element.click()
+
+```
+
+### Step 4: Validating System State (Assertions)
+
+**Gherkin:** `Then I should see the message "Query Successful"`
+
+We must validate that the system responds correctly via the UI's status alert box (ID: `status_alert`).
+
+Python
+
+```
+@then('I should see the message "Query Successful"')
+def step_impl(context):
+    """ Asserts that the flash message element contains the success string """
+    element = context.driver.find_element(By.ID, 'status_alert')
+    assert "Query Successful" in element.text
+
+```
+
+### Step 5: Validating Data Presence and Absence
+
+**Gherkin:** `And I should see "prod-web-01" in the active list`
+
+**Gherkin:** `But I should not see "deprecated-db-node" in the active list`
+
+Finally, we parse the returned infrastructure table (ID: `infrastructure_table`) to verify both expected inclusions and expected exclusions.
+
+Python
+
+```
+@then('I should see "prod-web-01" in the active list')
+def step_impl(context):
+    """ Confirms the target node exists in the resulting DOM table """
+    element = context.driver.find_element(By.ID, 'infrastructure_table')
+    assert "prod-web-01" in element.text
+
+@then('I should not see "deprecated-db-node" in the active list')
+def step_impl(context):
+    """ Ensures decommissioned nodes are successfully filtered out """
+    element = context.driver.find_element(By.ID, 'infrastructure_table')
+    assert "deprecated-db-node" not in element.text
+```
